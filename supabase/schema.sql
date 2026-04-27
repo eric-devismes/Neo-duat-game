@@ -1,0 +1,136 @@
+-- Home_Made — schéma de gestion de stock
+-- À exécuter dans Supabase: SQL Editor -> New Query -> coller -> Run
+
+create extension if not exists "pgcrypto";
+
+-- =========================================================================
+-- items: une ligne par référence (modèle d'article).
+-- Le champ sku sert de payload du QR-code.
+-- quantity et avg_unit_cost sont maintenus automatiquement par le trigger.
+-- =========================================================================
+create table if not exists public.items (
+  id              uuid primary key default gen_random_uuid(),
+  sku             text unique not null,
+  name            text not null,
+  category        text,
+  unit            text not null default 'pcs',
+  supplier        text,
+  min_stock       numeric not null default 0,
+  notes           text,
+  quantity        numeric not null default 0,
+  avg_unit_cost   numeric not null default 0,
+  total_value     numeric generated always as (quantity * avg_unit_cost) stored,
+  archived        boolean not null default false,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+create index if not exists items_sku_idx       on public.items (sku);
+create index if not exists items_category_idx  on public.items (category);
+create index if not exists items_archived_idx  on public.items (archived);
+
+-- =========================================================================
+-- movements: chaque entrée (IN, achat) ou sortie (OUT, utilisation chantier)
+-- =========================================================================
+create table if not exists public.movements (
+  id          uuid primary key default gen_random_uuid(),
+  item_id     uuid not null references public.items(id) on delete cascade,
+  kind        text not null check (kind in ('IN','OUT')),
+  quantity    numeric not null check (quantity > 0),
+  unit_cost   numeric,
+  site        text,
+  note        text,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists movements_item_idx    on public.movements (item_id);
+create index if not exists movements_created_idx on public.movements (created_at desc);
+
+-- =========================================================================
+-- Trigger: maintient quantity et avg_unit_cost (méthode CMUP).
+-- IN  : nouvelle qty = qty + qty_in, nouveau coût = (val + qty_in*pu) / nouvelle qty
+-- OUT : nouvelle qty = qty - qty_out, coût moyen inchangé
+-- =========================================================================
+create or replace function public.apply_movement()
+returns trigger
+language plpgsql
+as $$
+declare
+  current_qty   numeric;
+  current_avg   numeric;
+  new_qty       numeric;
+  new_avg       numeric;
+begin
+  if tg_op = 'INSERT' then
+    select quantity, avg_unit_cost into current_qty, current_avg
+    from public.items where id = new.item_id for update;
+
+    if current_qty is null then
+      raise exception 'Item % introuvable', new.item_id;
+    end if;
+
+    if new.kind = 'IN' then
+      if new.unit_cost is null or new.unit_cost < 0 then
+        raise exception 'unit_cost requis et >= 0 pour une entrée IN';
+      end if;
+      new_qty := current_qty + new.quantity;
+      if new_qty = 0 then
+        new_avg := 0;
+      else
+        new_avg := ((current_qty * current_avg) + (new.quantity * new.unit_cost)) / new_qty;
+      end if;
+    else  -- OUT
+      new_qty := current_qty - new.quantity;
+      if new_qty < 0 then
+        raise exception 'Stock insuffisant: % en stock, sortie demandée %', current_qty, new.quantity;
+      end if;
+      new_avg := current_avg;
+    end if;
+
+    update public.items
+       set quantity = new_qty,
+           avg_unit_cost = new_avg,
+           updated_at = now()
+     where id = new.item_id;
+
+    return new;
+  end if;
+
+  return null;
+end;
+$$;
+
+drop trigger if exists trg_apply_movement on public.movements;
+create trigger trg_apply_movement
+after insert on public.movements
+for each row
+execute function public.apply_movement();
+
+-- =========================================================================
+-- Vue agrégée pour exports / vue "tableur"
+-- =========================================================================
+create or replace view public.items_view as
+select
+  i.id,
+  i.sku,
+  i.name,
+  i.category,
+  i.unit,
+  i.supplier,
+  i.quantity,
+  i.min_stock,
+  i.avg_unit_cost,
+  i.total_value,
+  i.archived,
+  i.notes,
+  i.created_at,
+  i.updated_at,
+  (i.quantity <= i.min_stock) as low_stock
+from public.items i;
+
+-- =========================================================================
+-- RLS: à adapter quand vous ajouterez l'authentification.
+-- Pour démarrer rapidement (un seul utilisateur), désactivé.
+-- =========================================================================
+alter table public.items     disable row level security;
+alter table public.movements disable row level security;
