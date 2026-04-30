@@ -1,11 +1,18 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Nav from "@/components/Nav";
+import PWARegister from "@/components/PWARegister";
 
 export const metadata: Metadata = {
   title: "Home_Made — Stock",
   description: "Gestion stock matériaux & consommables — terrasses sur plots",
-  manifest: "/manifest.webmanifest",
+  applicationName: "Home_Made",
+  appleWebApp: {
+    capable: true,
+    title: "Home_Made",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
@@ -23,6 +30,7 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <body className="min-h-screen flex flex-col">
+        <PWARegister />
         <Nav />
         <main className="flex-1 mx-auto w-full max-w-5xl px-4 py-6">
           {children}
