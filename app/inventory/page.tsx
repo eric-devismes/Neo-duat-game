@@ -47,6 +47,9 @@ export default async function InventoryPage({
           <a href="/api/sheets/sync" className="btn-secondary text-sm">
             Sync Google Sheets
           </a>
+          <Link href="/items/import" className="btn-secondary text-sm">
+            Import CSV
+          </Link>
           <Link href="/items/new" className="btn-primary text-sm">
             + Référence
           </Link>
