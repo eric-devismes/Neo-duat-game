@@ -44,12 +44,15 @@ export default async function Dashboard() {
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2">
+      <section className="grid gap-3 sm:grid-cols-3">
         <Link href="/scan" className="btn-primary text-center text-base py-3">
           Scanner un article
         </Link>
         <Link href="/items/new" className="btn-secondary text-center text-base py-3">
           Nouvelle référence
+        </Link>
+        <Link href="/chantiers/new" className="btn-secondary text-center text-base py-3">
+          Nouveau chantier
         </Link>
       </section>
 

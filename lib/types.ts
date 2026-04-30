@@ -36,9 +36,33 @@ export type Movement = {
   kind: "IN" | "OUT";
   quantity: number;
   unit_cost: number | null;
+  cost_at_movement: number | null;
   site: string | null;
+  chantier_id: string | null;
   note: string | null;
+  voided_at: string | null;
   created_at: string;
+};
+
+export type ChantierStatus = "actif" | "termine" | "archive";
+export const CHANTIER_STATUSES: ChantierStatus[] = ["actif", "termine", "archive"];
+export const CHANTIER_STATUS_LABEL: Record<ChantierStatus, string> = {
+  actif: "Actif",
+  termine: "Terminé",
+  archive: "Archivé",
+};
+
+export type Chantier = {
+  id: string;
+  name: string;
+  client: string | null;
+  address: string | null;
+  status: ChantierStatus;
+  started_on: string | null;
+  closed_on: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type MovementWithItem = Movement & {

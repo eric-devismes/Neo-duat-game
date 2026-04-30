@@ -63,7 +63,11 @@ function feedbackOk() {
   }
 }
 
-export default function ScanClient() {
+export default function ScanClient({
+  chantiers = [],
+}: {
+  chantiers?: { id: string; name: string }[];
+}) {
   const elRef = useRef<HTMLDivElement>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [mode, setMode] = useState<Mode>("scan");
@@ -73,6 +77,7 @@ export default function ScanClient() {
   const [quantity, setQuantity] = useState<string>("1");
   const [unitCost, setUnitCost] = useState<string>("");
   const [site, setSite] = useState<string>("");
+  const [chantierId, setChantierId] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const [manualSku, setManualSku] = useState<string>("");
   const [savedOffline, setSavedOffline] = useState(false);
@@ -164,6 +169,7 @@ export default function ScanClient() {
     setQuantity("1");
     setUnitCost("");
     setSite("");
+    setChantierId("");
     setNote("");
     setKind("IN");
     setSavedOffline(false);
@@ -188,6 +194,7 @@ export default function ScanClient() {
       quantity: qty,
       unit_cost: kind === "IN" ? Number(unitCost) : null,
       site: kind === "OUT" ? site || null : null,
+      chantier_id: kind === "OUT" ? chantierId || null : null,
       note: note || null,
     };
 
@@ -344,13 +351,27 @@ export default function ScanClient() {
             </div>
           )}
           {kind === "OUT" && (
-            <div>
+            <div className="space-y-2">
               <label className="label">Chantier (optionnel)</label>
+              {chantiers.length > 0 && (
+                <select
+                  value={chantierId}
+                  onChange={(e) => setChantierId(e.target.value)}
+                  className="input"
+                >
+                  <option value="">— Aucun (ou saisie libre) —</option>
+                  {chantiers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
               <input
                 value={site}
                 onChange={(e) => setSite(e.target.value)}
                 className="input"
-                placeholder="ex: Terrasse Dupont"
+                placeholder="Ou saisie libre: ex Terrasse Dupont"
               />
             </div>
           )}

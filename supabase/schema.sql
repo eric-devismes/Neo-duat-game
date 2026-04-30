@@ -4,6 +4,25 @@
 create extension if not exists "pgcrypto";
 
 -- =========================================================================
+-- chantiers: projets (terrasses) auxquels les sorties matériaux peuvent être
+-- rattachées. Permet de calculer le coût matière par chantier.
+-- =========================================================================
+create table if not exists public.chantiers (
+  id          uuid primary key default gen_random_uuid(),
+  name        text unique not null,
+  client      text,
+  address     text,
+  status      text not null default 'actif'
+              check (status in ('actif','termine','archive')),
+  started_on  date,
+  closed_on   date,
+  notes       text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists chantiers_status_idx on public.chantiers(status);
+
+-- =========================================================================
 -- items: une ligne par référence (modèle d'article).
 -- Le champ sku sert de payload du QR-code.
 -- quantity et avg_unit_cost sont maintenus automatiquement par le trigger.
@@ -33,21 +52,48 @@ create index if not exists items_archived_idx  on public.items (archived);
 -- movements: chaque entrée (IN, achat) ou sortie (OUT, utilisation chantier)
 -- =========================================================================
 create table if not exists public.movements (
-  id            uuid primary key default gen_random_uuid(),
-  item_id       uuid not null references public.items(id) on delete cascade,
-  kind          text not null check (kind in ('IN','OUT')),
-  quantity      numeric not null check (quantity > 0),
-  unit_cost     numeric,
-  site          text,
-  note          text,
-  voided_at     timestamptz,
-  voided_reason text,
-  created_at    timestamptz not null default now()
+  id               uuid primary key default gen_random_uuid(),
+  item_id          uuid not null references public.items(id) on delete cascade,
+  kind             text not null check (kind in ('IN','OUT')),
+  quantity         numeric not null check (quantity > 0),
+  unit_cost        numeric,
+  cost_at_movement numeric,
+  site             text,
+  chantier_id      uuid references public.chantiers(id),
+  note             text,
+  voided_at        timestamptz,
+  voided_reason    text,
+  created_at       timestamptz not null default now()
 );
 
-create index if not exists movements_item_idx    on public.movements (item_id);
-create index if not exists movements_created_idx on public.movements (created_at desc);
-create index if not exists movements_voided_idx  on public.movements (voided_at);
+create index if not exists movements_item_idx     on public.movements (item_id);
+create index if not exists movements_created_idx  on public.movements (created_at desc);
+create index if not exists movements_voided_idx   on public.movements (voided_at);
+create index if not exists movements_chantier_idx on public.movements (chantier_id);
+
+-- BEFORE INSERT: snapshot CMUP au moment du mouvement (utile pour OUT).
+create or replace function public.before_movement()
+returns trigger
+language plpgsql
+as $$
+declare
+  current_avg numeric;
+begin
+  if new.kind = 'IN' then
+    new.cost_at_movement := new.unit_cost;
+  else
+    select avg_unit_cost into current_avg
+      from public.items where id = new.item_id;
+    new.cost_at_movement := coalesce(current_avg, 0);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_before_movement on public.movements;
+create trigger trg_before_movement
+before insert on public.movements
+for each row execute function public.before_movement();
 
 -- =========================================================================
 -- Trigger: maintient quantity et avg_unit_cost (méthode CMUP).
@@ -127,7 +173,7 @@ declare
   r record;
 begin
   for r in
-    select kind, quantity, unit_cost
+    select id, kind, quantity, unit_cost
       from public.movements
      where item_id = p_item and voided_at is null
      order by created_at, id
@@ -139,7 +185,9 @@ begin
         c := ((q * c) + (r.quantity * coalesce(r.unit_cost, 0))) / (q + r.quantity);
       end if;
       q := q + r.quantity;
+      update public.movements set cost_at_movement = r.unit_cost where id = r.id;
     else
+      update public.movements set cost_at_movement = c where id = r.id;
       q := q - r.quantity;
     end if;
   end loop;
@@ -199,8 +247,24 @@ select
 from public.items i;
 
 -- =========================================================================
+-- Vue: coût matière par chantier
+-- =========================================================================
+create or replace view public.chantier_costs as
+select
+  c.id as chantier_id,
+  c.name,
+  c.status,
+  count(distinct m.item_id) filter (where m.voided_at is null and m.kind = 'OUT') as nb_articles,
+  coalesce(sum(m.quantity * m.cost_at_movement)
+           filter (where m.voided_at is null and m.kind = 'OUT'), 0) as total_cost
+from public.chantiers c
+left join public.movements m on m.chantier_id = c.id
+group by c.id, c.name, c.status;
+
+-- =========================================================================
 -- RLS: à adapter quand vous ajouterez l'authentification.
 -- Pour démarrer rapidement (un seul utilisateur), désactivé.
 -- =========================================================================
 alter table public.items     disable row level security;
 alter table public.movements disable row level security;
+alter table public.chantiers disable row level security;

@@ -55,6 +55,7 @@ export async function recordMovement(formData: FormData) {
   const unit_cost =
     unit_cost_raw == null || unit_cost_raw === "" ? null : Number(unit_cost_raw);
   const site = String(formData.get("site") ?? "").trim() || null;
+  const chantier_id = String(formData.get("chantier_id") ?? "").trim() || null;
   const note = String(formData.get("note") ?? "").trim() || null;
 
   if (!item_id) throw new Error("Article requis");
@@ -71,6 +72,7 @@ export async function recordMovement(formData: FormData) {
     quantity,
     unit_cost: kind === "IN" ? unit_cost : null,
     site: kind === "OUT" ? site : null,
+    chantier_id: kind === "OUT" ? chantier_id : null,
     note,
   });
   if (error) throw new Error(error.message);

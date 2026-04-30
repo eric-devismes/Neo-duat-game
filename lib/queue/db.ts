@@ -23,6 +23,7 @@ export type QueuedMovement = {
   quantity: number;
   unit_cost: number | null;
   site: string | null;
+  chantier_id: string | null;
   note: string | null;
   queued_at: string;
   attempts?: number;

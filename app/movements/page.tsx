@@ -9,28 +9,38 @@ export const dynamic = "force-dynamic";
 export default async function MovementsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ kind?: string; site?: string; show?: string }>;
+  searchParams: Promise<{
+    kind?: string;
+    site?: string;
+    chantier?: string;
+    show?: string;
+  }>;
 }) {
   if (!isConfigured()) return <ConfigGate />;
   const sp = await searchParams;
   const kind = sp.kind ?? "";
   const site = sp.site ?? "";
+  const chantierId = sp.chantier ?? "";
   const includeVoided = sp.show === "all";
 
   const sb = getSupabaseAdmin();
   let q = sb
     .from("movements")
     .select(
-      "id, kind, quantity, unit_cost, site, note, created_at, voided_at, item:items(id, sku, name, unit)",
+      "id, kind, quantity, unit_cost, site, chantier_id, note, created_at, voided_at, item:items(id, sku, name, unit), chantier:chantiers(id, name)",
     )
     .order("created_at", { ascending: false })
     .limit(500);
 
   if (kind === "IN" || kind === "OUT") q = q.eq("kind", kind);
   if (site) q = q.ilike("site", `%${site}%`);
+  if (chantierId) q = q.eq("chantier_id", chantierId);
   if (!includeVoided) q = q.is("voided_at", null);
 
-  const { data: moves, error } = await q;
+  const [{ data: moves, error }, { data: chantierList }] = await Promise.all([
+    q,
+    sb.from("chantiers").select("id, name").order("name"),
+  ]);
   if (error) throw new Error(error.message);
 
   return (
@@ -48,10 +58,22 @@ export default async function MovementsPage({
           <option value="IN">Entrées</option>
           <option value="OUT">Sorties</option>
         </select>
+        <select
+          name="chantier"
+          defaultValue={chantierId}
+          className="input max-w-[220px]"
+        >
+          <option value="">Tous chantiers (structurés)</option>
+          {chantierList?.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
         <input
           name="site"
           defaultValue={site}
-          placeholder="Chantier"
+          placeholder="Recherche libre dans 'site'"
           className="input flex-1 min-w-[200px]"
         />
         <label className="flex items-center gap-2 text-sm">
@@ -128,7 +150,18 @@ export default async function MovementsPage({
                         ? formatEUR(Number(m.unit_cost) * Number(m.quantity))
                         : "—"}
                     </td>
-                    <td className="px-3 py-2">{m.site ?? "—"}</td>
+                    <td className="px-3 py-2">
+                      {m.chantier ? (
+                        <Link
+                          href={`/chantiers/${(m.chantier as any).id}`}
+                          className="hover:underline"
+                        >
+                          {(m.chantier as any).name}
+                        </Link>
+                      ) : (
+                        m.site ?? "—"
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right">
                       {voided ? (
                         <form action={restoreMovement} className="inline">

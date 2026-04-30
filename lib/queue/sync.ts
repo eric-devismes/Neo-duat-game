@@ -36,6 +36,7 @@ export async function flushQueue(): Promise<{
       quantity: m.quantity,
       unit_cost: m.unit_cost,
       site: m.site,
+      chantier_id: m.chantier_id,
       note: m.note,
       created_at: m.queued_at,
     });

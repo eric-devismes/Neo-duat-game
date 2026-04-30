@@ -35,6 +35,12 @@ export default async function ItemPage({
     .order("created_at", { ascending: false })
     .limit(50);
 
+  const { data: chantiers } = await sb
+    .from("chantiers")
+    .select("id, name")
+    .eq("status", "actif")
+    .order("name");
+
   const updateThis = updateItem.bind(null, id);
 
   return (
@@ -126,7 +132,19 @@ export default async function ItemPage({
           </div>
           <div>
             <label className="label">Chantier (sortie)</label>
-            <input name="site" className="input" placeholder="ex: Terrasse Dupont" />
+            <select name="chantier_id" defaultValue="" className="input">
+              <option value="">— Aucun (saisie libre ci-dessous) —</option>
+              {chantiers?.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <input
+              name="site"
+              className="input mt-2"
+              placeholder="Ou saisie libre: ex Terrasse Dupont"
+            />
           </div>
           <div>
             <label className="label">Note</label>
