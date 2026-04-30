@@ -113,7 +113,11 @@ export default function ScanClient() {
     return () => {
       stopped = true;
       scanner.stop().catch(() => {});
-      scanner.clear().catch(() => {});
+      try {
+        scanner.clear();
+      } catch {
+        /* not running */
+      }
     };
   }, [mode]);
 
