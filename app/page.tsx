@@ -14,6 +14,7 @@ export default async function Dashboard() {
     sb
       .from("movements")
       .select("id, kind, quantity, unit_cost, created_at, item:items(sku,name,unit)")
+      .is("voided_at", null)
       .order("created_at", { ascending: false })
       .limit(8),
   ]);

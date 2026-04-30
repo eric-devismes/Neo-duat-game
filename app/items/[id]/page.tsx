@@ -3,7 +3,12 @@ import { notFound } from "next/navigation";
 import { isConfigured, getSupabaseAdmin } from "@/lib/supabase/server";
 import { formatEUR, formatQty, formatDate } from "@/lib/format";
 import { UNITS, UNIT_LABEL } from "@/lib/types";
-import { recordMovement, updateItem } from "@/app/items/actions";
+import {
+  recordMovement,
+  restoreMovement,
+  updateItem,
+  voidMovement,
+} from "@/app/items/actions";
 import ConfigGate from "@/components/ConfigGate";
 
 export const dynamic = "force-dynamic";
@@ -214,36 +219,66 @@ export default async function ItemPage({
               <th className="text-right px-3 py-2">PU</th>
               <th className="text-left px-3 py-2">Chantier</th>
               <th className="text-left px-3 py-2">Note</th>
+              <th className="text-right px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {moves?.length ? (
-              moves.map((m) => (
-                <tr key={m.id} className="border-t border-brand-100">
-                  <td className="px-3 py-2">{formatDate(m.created_at)}</td>
-                  <td className="px-3 py-2">
-                    <span
-                      className={
-                        m.kind === "IN" ? "text-green-700" : "text-red-700"
-                      }
-                    >
-                      {m.kind === "IN" ? "Entrée" : "Sortie"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {m.kind === "IN" ? "+" : "−"}
-                    {formatQty(m.quantity)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {m.unit_cost != null ? formatEUR(m.unit_cost) : "—"}
-                  </td>
-                  <td className="px-3 py-2">{m.site ?? "—"}</td>
-                  <td className="px-3 py-2">{m.note ?? "—"}</td>
-                </tr>
-              ))
+              moves.map((m) => {
+                const voided = !!m.voided_at;
+                return (
+                  <tr
+                    key={m.id}
+                    className={`border-t border-brand-100 ${
+                      voided ? "line-through text-brand-500 bg-brand-50/50" : ""
+                    }`}
+                  >
+                    <td className="px-3 py-2">{formatDate(m.created_at)}</td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={
+                          m.kind === "IN" ? "text-green-700" : "text-red-700"
+                        }
+                      >
+                        {m.kind === "IN" ? "Entrée" : "Sortie"}
+                      </span>
+                      {voided && " (annulé)"}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {m.kind === "IN" ? "+" : "−"}
+                      {formatQty(m.quantity)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {m.unit_cost != null ? formatEUR(m.unit_cost) : "—"}
+                    </td>
+                    <td className="px-3 py-2">{m.site ?? "—"}</td>
+                    <td className="px-3 py-2">{m.note ?? "—"}</td>
+                    <td className="px-3 py-2 text-right">
+                      {voided ? (
+                        <form action={restoreMovement} className="inline">
+                          <input type="hidden" name="id" value={m.id} />
+                          <button className="text-xs text-brand-700 hover:underline">
+                            Restaurer
+                          </button>
+                        </form>
+                      ) : (
+                        <form action={voidMovement} className="inline">
+                          <input type="hidden" name="id" value={m.id} />
+                          <button
+                            className="text-xs text-red-700 hover:underline"
+                            title="Annuler ce mouvement (recalcule le stock)"
+                          >
+                            Annuler
+                          </button>
+                        </form>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
             ) : (
               <tr>
-                <td className="px-3 py-6 text-center text-brand-500" colSpan={6}>
+                <td className="px-3 py-6 text-center text-brand-500" colSpan={7}>
                   Aucun mouvement
                 </td>
               </tr>

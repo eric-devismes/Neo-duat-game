@@ -81,6 +81,57 @@ export async function recordMovement(formData: FormData) {
   revalidatePath(`/items/${item_id}`);
 }
 
+export async function voidMovement(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim() || "annulation";
+  if (!id) throw new Error("id requis");
+
+  const sb = getSupabaseAdmin();
+  const { data: existing } = await sb
+    .from("movements")
+    .select("id, item_id, voided_at")
+    .eq("id", id)
+    .single();
+  if (!existing) throw new Error("Mouvement introuvable");
+  if (existing.voided_at) return; // déjà annulé
+
+  const { error } = await sb
+    .from("movements")
+    .update({ voided_at: new Date().toISOString(), voided_reason: reason })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/");
+  revalidatePath("/inventory");
+  revalidatePath("/movements");
+  revalidatePath(`/items/${existing.item_id}`);
+}
+
+export async function restoreMovement(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) throw new Error("id requis");
+
+  const sb = getSupabaseAdmin();
+  const { data: existing } = await sb
+    .from("movements")
+    .select("id, item_id, voided_at")
+    .eq("id", id)
+    .single();
+  if (!existing) throw new Error("Mouvement introuvable");
+  if (!existing.voided_at) return;
+
+  const { error } = await sb
+    .from("movements")
+    .update({ voided_at: null, voided_reason: null })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/");
+  revalidatePath("/inventory");
+  revalidatePath("/movements");
+  revalidatePath(`/items/${existing.item_id}`);
+}
+
 export async function findItemBySku(sku: string) {
   const sb = getSupabaseAdmin();
   const { data, error } = await sb

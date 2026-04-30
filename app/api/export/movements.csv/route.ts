@@ -13,6 +13,7 @@ export async function GET() {
     .select(
       "created_at, kind, quantity, unit_cost, site, note, item:items(sku, name, unit)",
     )
+    .is("voided_at", null)
     .order("created_at", { ascending: false });
   if (error) return new Response(error.message, { status: 500 });
 

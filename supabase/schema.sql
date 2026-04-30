@@ -33,18 +33,21 @@ create index if not exists items_archived_idx  on public.items (archived);
 -- movements: chaque entrée (IN, achat) ou sortie (OUT, utilisation chantier)
 -- =========================================================================
 create table if not exists public.movements (
-  id          uuid primary key default gen_random_uuid(),
-  item_id     uuid not null references public.items(id) on delete cascade,
-  kind        text not null check (kind in ('IN','OUT')),
-  quantity    numeric not null check (quantity > 0),
-  unit_cost   numeric,
-  site        text,
-  note        text,
-  created_at  timestamptz not null default now()
+  id            uuid primary key default gen_random_uuid(),
+  item_id       uuid not null references public.items(id) on delete cascade,
+  kind          text not null check (kind in ('IN','OUT')),
+  quantity      numeric not null check (quantity > 0),
+  unit_cost     numeric,
+  site          text,
+  note          text,
+  voided_at     timestamptz,
+  voided_reason text,
+  created_at    timestamptz not null default now()
 );
 
 create index if not exists movements_item_idx    on public.movements (item_id);
 create index if not exists movements_created_idx on public.movements (created_at desc);
+create index if not exists movements_voided_idx  on public.movements (voided_at);
 
 -- =========================================================================
 -- Trigger: maintient quantity et avg_unit_cost (méthode CMUP).
@@ -62,6 +65,10 @@ declare
   new_avg       numeric;
 begin
   if tg_op = 'INSERT' then
+    if new.voided_at is not null then
+      return new;
+    end if;
+
     select quantity, avg_unit_cost into current_qty, current_avg
     from public.items where id = new.item_id for update;
 
@@ -105,6 +112,69 @@ create trigger trg_apply_movement
 after insert on public.movements
 for each row
 execute function public.apply_movement();
+
+-- =========================================================================
+-- recompute_item: recalcule quantity et avg_unit_cost à partir de l'historique
+-- non annulé. Utilisé quand on annule (void) un mouvement.
+-- =========================================================================
+create or replace function public.recompute_item(p_item uuid)
+returns void
+language plpgsql
+as $$
+declare
+  q numeric := 0;
+  c numeric := 0;
+  r record;
+begin
+  for r in
+    select kind, quantity, unit_cost
+      from public.movements
+     where item_id = p_item and voided_at is null
+     order by created_at, id
+  loop
+    if r.kind = 'IN' then
+      if (q + r.quantity) = 0 then
+        c := 0;
+      else
+        c := ((q * c) + (r.quantity * coalesce(r.unit_cost, 0))) / (q + r.quantity);
+      end if;
+      q := q + r.quantity;
+    else
+      q := q - r.quantity;
+    end if;
+  end loop;
+
+  if q < 0 then
+    raise exception 'Recalcul impossible: stock négatif (%) — un mouvement antérieur dépend d''un mouvement annulé.', q;
+  end if;
+
+  update public.items
+     set quantity = q,
+         avg_unit_cost = c,
+         updated_at = now()
+   where id = p_item;
+end;
+$$;
+
+create or replace function public.on_movement_void()
+returns trigger
+language plpgsql
+as $$
+begin
+  if old.voided_at is null and new.voided_at is not null then
+    perform public.recompute_item(new.item_id);
+  elsif old.voided_at is not null and new.voided_at is null then
+    perform public.recompute_item(new.item_id);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_void_movement on public.movements;
+create trigger trg_void_movement
+after update of voided_at on public.movements
+for each row
+execute function public.on_movement_void();
 
 -- =========================================================================
 -- Vue agrégée pour exports / vue "tableur"
