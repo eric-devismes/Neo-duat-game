@@ -3,21 +3,29 @@
 import { getSupabaseBrowser } from "@/lib/supabase/browser";
 import {
   bumpAttempt,
+  cacheAliases,
   cacheItems,
   pendingMovements,
   removeFromQueue,
+  type CachedAlias,
   type CachedItem,
 } from "./db";
 
 export async function refreshItemCache(): Promise<number> {
   const sb = getSupabaseBrowser();
-  const { data, error } = await sb
-    .from("items")
-    .select("id, sku, name, unit, quantity, avg_unit_cost, category, supplier")
-    .eq("archived", false);
-  if (error) throw error;
-  await cacheItems((data as CachedItem[]) ?? []);
-  return data?.length ?? 0;
+  const [items, aliases] = await Promise.all([
+    sb
+      .from("items")
+      .select("id, sku, name, unit, quantity, avg_unit_cost, category, supplier")
+      .eq("archived", false),
+    sb.from("item_aliases").select("code, item_id"),
+  ]);
+  if (items.error) throw items.error;
+  await cacheItems((items.data as CachedItem[]) ?? []);
+  if (!aliases.error) {
+    await cacheAliases((aliases.data as CachedAlias[]) ?? []);
+  }
+  return items.data?.length ?? 0;
 }
 
 export async function flushQueue(): Promise<{

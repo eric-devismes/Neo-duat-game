@@ -1,9 +1,10 @@
 "use client";
 
 const DB_NAME = "home_made";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const ITEMS_STORE = "items";
 const QUEUE_STORE = "queue";
+const ALIASES_STORE = "aliases";
 
 export type CachedItem = {
   id: string;
@@ -48,6 +49,9 @@ function openDB(): Promise<IDBDatabase> {
           keyPath: "localId",
           autoIncrement: true,
         });
+      }
+      if (!db.objectStoreNames.contains(ALIASES_STORE)) {
+        db.createObjectStore(ALIASES_STORE, { keyPath: "code" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -100,6 +104,34 @@ export function getCachedBySku(sku: string): Promise<CachedItem | undefined> {
 
 export function getAllCached(): Promise<CachedItem[]> {
   return tx<CachedItem[]>(ITEMS_STORE, "readonly", (s) => s.getAll());
+}
+
+export type CachedAlias = { code: string; item_id: string };
+
+export async function cacheAliases(rows: CachedAlias[]): Promise<void> {
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const t = db.transaction(ALIASES_STORE, "readwrite");
+    const s = t.objectStore(ALIASES_STORE);
+    s.clear();
+    for (const a of rows) s.put(a);
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+  });
+}
+
+export async function getCachedItemByAlias(
+  code: string,
+): Promise<CachedItem | undefined> {
+  const alias = await tx<CachedAlias | undefined>(
+    ALIASES_STORE,
+    "readonly",
+    (s) => s.get(code),
+  );
+  if (!alias) return undefined;
+  // Find item by id from the items store
+  const all = await getAllCached();
+  return all.find((it) => it.id === alias.item_id);
 }
 
 export async function enqueueMovement(

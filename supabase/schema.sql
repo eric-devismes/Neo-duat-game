@@ -71,6 +71,17 @@ create index if not exists movements_created_idx  on public.movements (created_a
 create index if not exists movements_voided_idx   on public.movements (voided_at);
 create index if not exists movements_chantier_idx on public.movements (chantier_id);
 
+-- =========================================================================
+-- item_aliases: codes-barres alternatifs (EAN-13, codes fournisseur)
+-- =========================================================================
+create table if not exists public.item_aliases (
+  code        text primary key,
+  item_id     uuid not null references public.items(id) on delete cascade,
+  label       text,
+  created_at  timestamptz not null default now()
+);
+create index if not exists item_aliases_item_idx on public.item_aliases (item_id);
+
 -- BEFORE INSERT: snapshot CMUP au moment du mouvement (utile pour OUT).
 create or replace function public.before_movement()
 returns trigger
@@ -265,6 +276,7 @@ group by c.id, c.name, c.status;
 -- RLS: à adapter quand vous ajouterez l'authentification.
 -- Pour démarrer rapidement (un seul utilisateur), désactivé.
 -- =========================================================================
-alter table public.items     disable row level security;
-alter table public.movements disable row level security;
-alter table public.chantiers disable row level security;
+alter table public.items         disable row level security;
+alter table public.movements     disable row level security;
+alter table public.chantiers     disable row level security;
+alter table public.item_aliases  disable row level security;

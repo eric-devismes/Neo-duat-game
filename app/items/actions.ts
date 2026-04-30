@@ -134,6 +134,32 @@ export async function restoreMovement(formData: FormData) {
   revalidatePath(`/items/${existing.item_id}`);
 }
 
+export async function addAlias(formData: FormData) {
+  const item_id = String(formData.get("item_id") ?? "");
+  const code = String(formData.get("code") ?? "").trim();
+  const label = String(formData.get("label") ?? "").trim() || null;
+  if (!item_id || !code) throw new Error("item_id et code requis");
+
+  const sb = getSupabaseAdmin();
+  const { error } = await sb
+    .from("item_aliases")
+    .upsert({ code, item_id, label }, { onConflict: "code" });
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/items/${item_id}`);
+}
+
+export async function removeAlias(formData: FormData) {
+  const code = String(formData.get("code") ?? "");
+  const item_id = String(formData.get("item_id") ?? "");
+  if (!code) throw new Error("code requis");
+
+  const sb = getSupabaseAdmin();
+  const { error } = await sb.from("item_aliases").delete().eq("code", code);
+  if (error) throw new Error(error.message);
+  if (item_id) revalidatePath(`/items/${item_id}`);
+}
+
 export async function findItemBySku(sku: string) {
   const sb = getSupabaseAdmin();
   const { data, error } = await sb

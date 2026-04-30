@@ -9,6 +9,7 @@ import { formatEUR, formatQty } from "@/lib/format";
 import {
   enqueueMovement,
   getCachedBySku,
+  getCachedItemByAlias,
   type CachedItem,
 } from "@/lib/queue/db";
 import {
@@ -126,43 +127,62 @@ export default function ScanClient({
     };
   }, [mode]);
 
-  async function loadSku(sku: string) {
+  async function loadSku(code: string) {
     setErrorMsg("");
-    // Try local cache first (works offline + faster)
-    const cached = await getCachedBySku(sku).catch(() => undefined);
+    // Try local cache: by SKU first, then by alias (EAN-13, supplier code)
+    let cached =
+      (await getCachedBySku(code).catch(() => undefined)) ??
+      (await getCachedItemByAlias(code).catch(() => undefined));
     if (cached) {
       setItem(cached);
       resetForm();
       setMode("form");
       return;
     }
-    // Fallback to network
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       setErrorMsg(
-        `Article "${sku}" non trouvé dans le cache local. Reconnectez-vous au réseau et réessayez.`,
+        `Code "${code}" non trouvé dans le cache local. Reconnectez-vous au réseau et réessayez.`,
       );
       setMode("error");
       return;
     }
     const sb = getSupabaseBrowser();
-    const { data, error } = await sb
-      .from("items")
-      .select("*")
-      .eq("sku", sku)
+    // Try direct SKU
+    const bySku = await sb.from("items").select("*").eq("sku", code).maybeSingle();
+    if (bySku.error) {
+      setErrorMsg(bySku.error.message);
+      setMode("error");
+      return;
+    }
+    if (bySku.data) {
+      setItem(bySku.data as Item);
+      resetForm();
+      setMode("form");
+      return;
+    }
+    // Try alias
+    const alias = await sb
+      .from("item_aliases")
+      .select("item_id")
+      .eq("code", code)
       .maybeSingle();
-    if (error) {
-      setErrorMsg(error.message);
-      setMode("error");
-      return;
+    if (alias.data) {
+      const it = await sb
+        .from("items")
+        .select("*")
+        .eq("id", alias.data.item_id)
+        .single();
+      if (!it.error && it.data) {
+        setItem(it.data as Item);
+        resetForm();
+        setMode("form");
+        return;
+      }
     }
-    if (!data) {
-      setErrorMsg(`Aucun article avec le SKU "${sku}"`);
-      setMode("error");
-      return;
-    }
-    setItem(data as Item);
-    resetForm();
-    setMode("form");
+    setErrorMsg(
+      `Aucun article avec le code "${code}". Vous pouvez l'associer à un article existant depuis sa fiche détail.`,
+    );
+    setMode("error");
   }
 
   function resetForm() {

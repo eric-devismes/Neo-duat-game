@@ -4,7 +4,9 @@ import { isConfigured, getSupabaseAdmin } from "@/lib/supabase/server";
 import { formatEUR, formatQty, formatDate } from "@/lib/format";
 import { UNITS, UNIT_LABEL } from "@/lib/types";
 import {
+  addAlias,
   recordMovement,
+  removeAlias,
   restoreMovement,
   updateItem,
   voidMovement,
@@ -40,6 +42,12 @@ export default async function ItemPage({
     .select("id, name")
     .eq("status", "actif")
     .order("name");
+
+  const { data: aliases } = await sb
+    .from("item_aliases")
+    .select("code, label, created_at")
+    .eq("item_id", id)
+    .order("created_at");
 
   const updateThis = updateItem.bind(null, id);
 
@@ -223,6 +231,54 @@ export default async function ItemPage({
             Archiver cette référence
           </label>
           <button className="btn-secondary w-full">Enregistrer</button>
+        </form>
+      </section>
+
+      <section className="card">
+        <h2 className="font-semibold mb-2">Codes-barres alternatifs</h2>
+        <p className="text-xs text-brand-700 mb-3">
+          Associez un EAN-13 ou tout autre code (fournisseur, lot, etc.) à
+          cet article. Le scanner reconnaîtra ces codes en plus du SKU
+          Home_Made.
+        </p>
+        {aliases?.length ? (
+          <ul className="divide-y divide-brand-100 mb-3 text-sm">
+            {aliases.map((a) => (
+              <li key={a.code} className="py-2 flex items-center justify-between gap-2">
+                <div>
+                  <span className="font-mono">{a.code}</span>
+                  {a.label && (
+                    <span className="text-brand-500 ml-2">— {a.label}</span>
+                  )}
+                </div>
+                <form action={removeAlias} className="inline">
+                  <input type="hidden" name="code" value={a.code} />
+                  <input type="hidden" name="item_id" value={item.id} />
+                  <button className="text-xs text-red-700 hover:underline">
+                    Retirer
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-brand-500 mb-3">Aucun code associé.</p>
+        )}
+        <form action={addAlias} className="flex flex-wrap gap-2">
+          <input type="hidden" name="item_id" value={item.id} />
+          <input
+            name="code"
+            required
+            inputMode="numeric"
+            placeholder="Code (ex: 3760123456789)"
+            className="input flex-1 min-w-[180px] font-mono"
+          />
+          <input
+            name="label"
+            placeholder="Libellé (optionnel)"
+            className="input flex-1 min-w-[150px]"
+          />
+          <button className="btn-secondary text-sm">Ajouter</button>
         </form>
       </section>
 
