@@ -36,9 +36,16 @@ npm install
 5. Copier-coller le contenu de `supabase/schema.sql` puis **Run**.
    Vous devriez voir `Success. No rows returned`. Cela crée:
    - la table `items` (1 ligne par référence d'article)
-   - la table `movements` (1 ligne par entrée/sortie)
-   - le trigger `apply_movement` qui recalcule stock + CMUP automatiquement
+   - la table `movements` (1 ligne par entrée/sortie, avec `voided_at`
+     pour l'annulation)
+   - le trigger `apply_movement` qui recalcule stock + CMUP à chaque insert
+   - la fonction `recompute_item` + trigger `trg_void_movement` qui
+     recalculent le stock quand un mouvement est annulé ou restauré
    - la vue `items_view` (utile pour la sortie tableur)
+
+   Pour un projet **déjà initialisé** avec une version antérieure du schéma,
+   exécutez plutôt `supabase/migrations/0001_void_movements.sql` qui ajoute
+   les colonnes/fonctions manquantes sans toucher aux données.
 6. Menu **Settings → API**, copier:
    - **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
    - **anon public** key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -52,8 +59,20 @@ npm install
 cp .env.local.example .env.local
 ```
 
-Remplir les 3 variables Supabase ci-dessus. `NEXT_PUBLIC_APP_URL` peut rester
-`http://localhost:3000` en local.
+Variables à remplir:
+
+| Variable | Valeur | Obligatoire |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL projet Supabase | ✅ |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | clé anon | ✅ |
+| `SUPABASE_SERVICE_ROLE_KEY` | clé service_role | ✅ |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` ou URL Vercel | recommandé |
+| `APP_PASSCODE` | code d'accès numérique (4-8 chiffres) | recommandé en prod |
+| `GOOGLE_*` | voir section 6 | optionnel |
+
+**`APP_PASSCODE`**: tant qu'il est vide, l'app est ouverte (pratique en dev).
+Dès qu'il contient une valeur, toutes les pages sauf `/login` exigent ce code.
+Changer le code invalide automatiquement les sessions ouvertes.
 
 ---
 
@@ -87,7 +106,26 @@ Premier essai recommandé:
 5. **Deploy**.
 
 L'app est désormais accessible depuis n'importe quel navigateur (PC, mobile).
-Sur iPhone/Android, "Ajouter à l'écran d'accueil" pour un comportement type appli.
+
+### Installer comme une app
+
+L'app est une **PWA** (Progressive Web App):
+
+- **iPhone (Safari)**: bouton Partager → "Ajouter à l'écran d'accueil".
+  Icône Home_Made apparaît sur l'écran, l'app s'ouvre en plein écran sans
+  barre Safari.
+- **Android (Chrome)**: une bannière "Installer l'app" apparaît automatiquement,
+  ou menu ⋮ → "Installer l'application".
+- **Desktop (Chrome/Edge)**: icône d'installation à droite de la barre
+  d'adresse, ou menu → "Installer Home_Made".
+
+Une fois installée, l'app fonctionne **hors ligne** pour la consultation et
+le **scan**:
+
+- Le cache des articles est rafraîchi à chaque visite de la page Scanner.
+- Les scans hors-ligne sont mis en file d'attente locale (IndexedDB) et
+  synchronisés automatiquement au retour du réseau (badge en bas de l'écran
+  indique le nombre en attente).
 
 ⚠️ Le scan QR exige **HTTPS** (sauf localhost). Vercel fournit HTTPS d'office.
 
@@ -144,6 +182,24 @@ qui pointent vers ces données — ils ne seront pas écrasés.
 
 ---
 
+## 6.5. Annuler un mouvement
+
+Si vous vous êtes trompé (mauvaise quantité, mauvais article, doublon de scan):
+
+1. Aller sur la page de l'article (ou directement sur `/movements`).
+2. Cliquer sur **Annuler** à côté de la ligne fautive.
+3. Le stock et le CMUP sont **recalculés depuis zéro** à partir de tout
+   l'historique non-annulé de l'article — donc parfaitement corrects, même si
+   l'erreur date d'il y a plusieurs mois.
+4. La ligne reste affichée barrée, marquée "(annulé)". Cocher "inclure annulés"
+   sur `/movements` pour les voir tous, et **Restaurer** pour annuler l'annulation.
+
+⚠️ Annuler un IN historique peut rendre certains OUT postérieurs invalides
+(stock devenu négatif). Dans ce cas la base refuse l'annulation avec un
+message d'erreur — annulez d'abord les OUT concernés.
+
+---
+
 ## 7. Comment ça marche (vue d'ensemble)
 
 | Page | Pour qui | Ce qu'on y fait |
@@ -166,6 +222,28 @@ qui pointent vers ces données — ils ne seront pas écrasés.
   `qté × CMUP`.
 - **Compta mensuelle**: clic sur *Sync Google Sheets* (ou export CSV) → la
   feuille se met à jour, la compta y voit la valeur totale et le détail.
+
+---
+
+## 7.bis. Mode hors-ligne (chantier sans réseau)
+
+Le scénario typique:
+1. Vous arrivez chez le client, **pas de Wi-Fi, pas de 4G**.
+2. Vous ouvrez l'app (déjà installée sur le téléphone).
+3. Vous scannez vos plots/lames/visserie comme d'habitude → un toast
+   *"Mouvement mis en file"* s'affiche au lieu de *"Enregistré"*.
+4. En bas de l'écran, un badge orange indique combien de mouvements sont
+   en attente.
+5. De retour à la voiture / au dépôt avec du réseau, l'app détecte le retour
+   en ligne et déclenche la synchro **automatiquement** (le badge devient
+   marron foncé, puis disparaît). Vous pouvez aussi cliquer dessus pour
+   forcer la synchro.
+
+**Limite importante**: vous ne pouvez scanner que des SKU déjà présents dans
+le **cache local**. Le cache est rafraîchi à chaque ouverture de la page
+Scanner avec une connexion. Si vous créez une nouvelle référence le matin
+chez vous puis partez en chantier, **passez d'abord par la page Scanner avec
+du réseau** pour que la nouvelle référence entre dans le cache.
 
 ---
 
