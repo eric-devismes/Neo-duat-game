@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import PWARegister from "@/components/PWARegister";
+import QueueBadge from "@/components/QueueBadge";
 
 export const metadata: Metadata = {
   title: "Home_Made — Stock",
@@ -38,6 +39,7 @@ export default function RootLayout({
         <footer className="no-print mx-auto w-full max-w-5xl px-4 py-4 text-xs text-brand-700/70">
           Home_Made · gestion de stock
         </footer>
+        <QueueBadge />
       </body>
     </html>
   );
